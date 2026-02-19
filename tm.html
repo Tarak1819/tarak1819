@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Torque Master - Calibrated</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { margin: 0; overflow: hidden; background: #0a0a12; font-family: sans-serif; touch-action: none; }
+        canvas { display: block; }
+        .ui-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
+        .interactive { pointer-events: auto; }
+        #joystick-container { position: absolute; bottom: 40px; right: 40px; width: 120px; height: 120px; background: rgba(255,255,255,0.05); border-radius: 50%; border: 2px solid rgba(255,255,255,0.2); }
+        #joystick-knob { position: absolute; width: 50px; height: 50px; background: #ff2e63; border-radius: 50%; top: 35px; left: 35px; box-shadow: 0 0 20px rgba(255, 46, 99, 0.4); }
+        .hidden { display: none !important; }
+        .modal { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: #1a1a2e; color: white; padding: 30px; border-radius: 12px; border: 1px solid #333; text-align: center; width: 90%; max-width: 380px; pointer-events: auto; }
+        .btn { background: #ff2e63; color: white; border: none; padding: 12px 24px; border-radius: 6px; cursor: pointer; font-weight: bold; margin-top: 15px; width: 100%; }
+        .stats-panel { position: absolute; top: 20px; left: 20px; color: white; pointer-events: auto; }
+        .level-dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; margin-right: 6px; background: #222; border: 1px solid #444; }
+        .level-dot.active { background: #ff2e63; box-shadow: 0 0 8px #ff2e63; }
+        .level-dot.complete { background: #08ffc8; }
+        input[type=range] { accent-color: #ff2e63; width: 100%; }
+    </style>
+</head>
+<body>
+
+<canvas id="gameCanvas"></canvas>
+
+<div class="ui-overlay">
+    <div id="start-screen" class="modal">
+        <h1 class="text-3xl font-bold mb-2">TORQUE MASTER</h1>
+        <p class="mb-6 text-gray-400 text-sm">$\tau = r \times F$</p>
+        <button class="btn interactive" onclick="startGame()">START</button>
+    </div>
+
+    <div id="hud" class="stats-panel hidden">
+        <div class="mb-4">
+            <div class="flex justify-between text-[10px] font-bold mb-1">
+                <span>ENERGY</span>
+                <span id="energy-text">100%</span>
+            </div>
+            <div class="w-48 h-2 bg-gray-900 rounded-full border border-gray-700">
+                <div id="energy-fill" class="h-full bg-cyan-400 rounded-full transition-all" style="width: 100%"></div>
+            </div>
+        </div>
+        
+        <div class="mb-4 bg-black/40 p-3 rounded-lg border border-white/10">
+            <span class="text-xs font-bold text-gray-300">RADIUS (r): <span id="r-val" class="text-white">8</span>cm</span>
+            <input type="range" id="radius-slider" class="mt-2 interactive" min="1" max="25" value="8" step="1">
+        </div>
+
+        <div id="sublevel-display" class="flex items-center">
+            <div class="level-dot" id="dot-0"></div>
+            <div class="level-dot" id="dot-1"></div>
+            <div class="level-dot" id="dot-2"></div>
+            <span class="text-[10px] ml-2 text-gray-500">LEVEL <span id="main-lvl">1</span></span>
+        </div>
+    </div>
+
+    <div id="fail-screen" class="modal hidden">
+        <h2 id="fail-title" class="text-xl font-bold mb-2 text-red-400">FAILED</h2>
+        <p id="fail-reason" class="mb-4 text-sm text-gray-300"></p>
+        <div id="math-hint" class="text-left text-[10px] bg-black p-3 rounded font-mono mb-4 text-cyan-300 border border-cyan-900/50"></div>
+        <button class="btn interactive" onclick="resetSublevel()">TRY AGAIN</button>
+    </div>
+
+    <div id="congrats-screen" class="modal hidden">
+        <h2 class="text-2xl font-bold text-yellow-400 mb-2">MASTERED</h2>
+        <p class="text-sm text-gray-300">The Physics of Torque is yours.</p>
+        <button class="btn interactive" onclick="location.reload()">RESTART</button>
+    </div>
+
+    <div id="joystick-container" class="interactive hidden">
+        <div id="joystick-knob"></div>
+    </div>
+</div>
+
+<script>
+    let canvas, ctx;
+    let mainLevel = 1;
+    let subLevel = 0; 
+    let energy = 100;
+    let radius = 8;
+    let gameState = 'START'; 
+
+    // Calibration: base * (r * force * scale)
+    // Apple (r=1, f=1, scale=200) => 200. Threshold is 150. Success!
+    const fruits = [
+        { name: 'Apple', threshold: 150, size: 45, emoji: '🍎', color: '#ff4d4d' },
+        { name: 'Watermelon', threshold: 800, size: 65, emoji: '🍉', color: '#2ecc71' },
+        { name: 'Pumpkin', threshold: 2200, size: 85, emoji: '🎃', color: '#e67e22' }
+    ];
+
+    let bladePos = { x: 0, y: 0 };
+    let bladeTarget = { x: 0, y: 0 };
+    let launchProgress = 0;
+    let isLaunching = false;
+    let fruitState = 'IDLE'; 
+
+    let stickActive = false;
+    let stickStart = { x: 0, y: 0 };
+    let stickOffset = { x: 0, y: 0 };
+    const JOY_LIMIT = 55;
+
+    function init() {
+        canvas = document.getElementById('gameCanvas');
+        ctx = canvas.getContext('2d');
+        window.addEventListener('resize', resize);
+        resize();
+        setupControls();
+        requestAnimationFrame(gameLoop);
+    }
+
+    function resize() {
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+        bladePos = { x: canvas.width / 2, y: canvas.height * 0.85 };
+    }
+
+    window.startGame = function() {
+        document.getElementById('start-screen').classList.add('hidden');
+        document.getElementById('hud').classList.remove('hidden');
+        document.getElementById('joystick-container').classList.remove('hidden');
+        gameState = 'PLAYING';
+        updateUI();
+    }
+
+    function updateUI() {
+        document.getElementById('r-val').innerText = radius;
+        document.getElementById('energy-fill').style.width = energy + '%';
+        document.getElementById('energy-text').innerText = Math.round(energy) + '%';
+        document.getElementById('main-lvl').innerText = mainLevel;
+        for (let i = 0; i < 3; i++) {
+            const d = document.getElementById('dot-' + i);
+            d.className = 'level-dot' + (i < subLevel ? ' complete' : (i === subLevel ? ' active' : ''));
+        }
+    }
+
+    function setupControls() {
+        const joy = document.getElementById('joystick-container');
+        const knob = document.getElementById('joystick-knob');
+        const slider = document.getElementById('radius-slider');
+
+        slider.addEventListener('input', (e) => {
+            radius = parseInt(e.target.value);
+            updateUI();
+        });
+
+        const start = (e) => {
+            if (gameState !== 'PLAYING' || isLaunching) return;
+            stickActive = true;
+            const t = e.touches ? e.touches[0] : e;
+            const r = joy.getBoundingClientRect();
+            stickStart = { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+        };
+
+        const move = (e) => {
+            if (!stickActive) return;
+            const t = e.touches ? e.touches[0] : e;
+            let dx = t.clientX - stickStart.x;
+            let dy = t.clientY - stickStart.y;
+            const d = Math.sqrt(dx*dx + dy*dy);
+            if (d > JOY_LIMIT) { dx *= JOY_LIMIT/d; dy *= JOY_LIMIT/d; }
+            stickOffset = { x: dx, y: dy };
+            knob.style.transform = `translate(${dx}px, ${dy}px)`;
+        };
+
+        const end = () => {
+            if (!stickActive) return;
+            stickActive = false;
+            knob.style.transform = `translate(0,0)`;
+            launch();
+        };
+
+        joy.addEventListener('mousedown', start);
+        window.addEventListener('mousemove', move);
+        window.addEventListener('mouseup', end);
+        joy.addEventListener('touchstart', start);
+        window.addEventListener('touchmove', move, {passive: false});
+        window.addEventListener('touchend', end);
+    }
+
+    function launch() {
+        const d = Math.sqrt(stickOffset.x**2 + stickOffset.y**2);
+        if (d < 15) return;
+
+        const force = d / JOY_LIMIT; 
+        const angle = Math.atan2(-stickOffset.y, -stickOffset.x);
+        const torque = radius * force * 200 * Math.abs(Math.sin(angle));
+        const target = fruits[subLevel];
+        const difficulty = 1 + (mainLevel - 1) * 0.3;
+        const currentThresh = target.threshold * difficulty;
+
+        energy -= (radius * 0.2) + (force * 8);
+        if (energy < 0) energy = 0;
+        updateUI();
+
+        isLaunching = true;
+        launchProgress = 0;
+        bladeTarget = { 
+            x: canvas.width/2 + Math.cos(angle) * 250, 
+            y: canvas.height/2 + Math.sin(angle) * 250 
+        };
+
+        setTimeout(() => {
+            if (torque >= currentThresh && torque < currentThresh * 3.5) {
+                fruitState = 'SLICED';
+                setTimeout(() => next(), 800);
+            } else if (torque >= currentThresh * 3.5) {
+                fruitState = 'FALLEN';
+                showFail("Overtorque! Fruit crushed.", torque, currentThresh);
+            } else {
+                showFail("Insufficient Torque.", torque, currentThresh);
+            }
+        }, 500);
+    }
+
+    function next() {
+        subLevel++;
+        if (subLevel > 2) {
+            mainLevel++;
+            subLevel = 0;
+            if (mainLevel > 3) {
+                gameState = 'WIN';
+                document.getElementById('congrats-screen').classList.remove('hidden');
+                return;
+            }
+        }
+        resetSublevel();
+    }
+
+    function showFail(msg, got, req) {
+        gameState = 'FAIL';
+        document.getElementById('fail-screen').classList.remove('hidden');
+        document.getElementById('fail-reason').innerText = msg;
+        document.getElementById('math-hint').innerHTML = `
+            Target: ${Math.round(req)} units<br>
+            Applied: ${Math.round(got)} units<br>
+            Formula: $\\tau = ${radius} \\cdot F \\cdot 200 \\cdot \\sin(\\theta)$
+        `;
+    }
+
+    window.resetSublevel = function() {
+        gameState = 'PLAYING';
+        fruitState = 'IDLE';
+        isLaunching = false;
+        document.getElementById('fail-screen').classList.add('hidden');
+        updateUI();
+    }
+
+    function gameLoop() {
+        ctx.fillStyle = '#0a0a12';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        if (gameState !== 'START') draw();
+        requestAnimationFrame(gameLoop);
+    }
+
+    function draw() {
+        const cx = canvas.width / 2, cy = canvas.height / 2;
+        const f = fruits[subLevel];
+
+        // Draw Fruit
+        ctx.save();
+        ctx.translate(cx, cy);
+        if (fruitState === 'FALLEN') {
+            ctx.translate(0, launchProgress * 500);
+            ctx.rotate(launchProgress * 10);
+        }
+        ctx.font = f.size + "px serif";
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        
+        if (fruitState === 'SLICED') {
+            ctx.fillText(f.emoji, -20 - launchProgress * 50, 0);
+            ctx.fillText(f.emoji, 20 + launchProgress * 50, 0);
+        } else {
+            ctx.shadowBlur = 15;
+            ctx.shadowColor = f.color;
+            ctx.fillText(f.emoji, 0, 0);
+        }
+        ctx.restore();
+
+        // Draw Blade/Stick
+        if (isLaunching) {
+            launchProgress += 0.08;
+            const x = bladePos.x + (bladeTarget.x - bladePos.x) * launchProgress;
+            const y = bladePos.y + (bladeTarget.y - bladePos.y) * launchProgress;
+            renderBlade(x, y, launchProgress * 20);
+        } else {
+            if (stickActive) {
+                ctx.beginPath();
+                ctx.setLineDash([4, 4]);
+                ctx.strokeStyle = 'rgba(255,255,255,0.2)';
+                ctx.moveTo(bladePos.x, bladePos.y);
+                const a = Math.atan2(-stickOffset.y, -stickOffset.x);
+                ctx.lineTo(bladePos.x + Math.cos(a)*100, bladePos.y + Math.sin(a)*100);
+                ctx.stroke();
+                ctx.setLineDash([]);
+            }
+            ctx.strokeStyle = '#3e2723';
+            ctx.lineWidth = 10;
+            ctx.beginPath();
+            ctx.moveTo(bladePos.x, bladePos.y);
+            ctx.lineTo(bladePos.x, bladePos.y + radius * 3);
+            ctx.stroke();
+            renderBlade(bladePos.x, bladePos.y, 0);
+        }
+    }
+
+    function renderBlade(x, y, r) {
+        ctx.save();
+        ctx.translate(x, y);
+        ctx.rotate(r);
+        ctx.fillStyle = '#fff';
+        ctx.beginPath();
+        ctx.moveTo(-25, 0); ctx.lineTo(25, 0); ctx.lineTo(0, -15);
+        ctx.fill();
+        ctx.restore();
+    }
+
+    window.onload = init;
+</script>
+</body>
+</html>

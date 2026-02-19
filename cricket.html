@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Newton's 1st Law: Cricket Edition</title>
+    <style>
+        body { text-align: center; font-family: sans-serif; background: #222; color: white; }
+        canvas { background: #2d5a27; border: 5px solid #fff; cursor: crosshair; }
+        .controls { margin: 20px; padding: 15px; background: #333; border-radius: 8px; display: inline-block; }
+        button { padding: 10px; font-size: 16px; cursor: pointer; background: #f1c40f; border: none; border-radius: 5px; }
+        .stat { margin: 10px; font-weight: bold; }
+        span { color: #f1c40f; }
+    </style>
+</head>
+<body>
+
+    <h1>Newton's 1st Law Cricket Lab</h1>
+    <p>Click the field to "apply a force" (Hit the ball)!</p>
+
+    <div class="controls">
+        <label>Gravity: <input type="checkbox" id="gravityBtn" checked></label>
+        <label>Air/Ground Friction: <input type="checkbox" id="frictionBtn" checked></label>
+        <button onclick="resetBall()">Reset Ball</button>
+    </div>
+
+    <div class="stat">Ball State: <span id="stateText">Inertia of Rest</span></div>
+    
+    <canvas id="gameCanvas" width="800" height="400"></canvas>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const stateText = document.getElementById('stateText');
+
+        let ball = { x: 100, y: 350, vx: 0, vy: 0, radius: 10 };
+        const gravityForce = 0.25;
+        const frictionForce = 0.985;
+
+        function draw() {
+            // Clear Canvas
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Draw Pitch
+            ctx.fillStyle = "#d2b48c";
+            ctx.fillRect(0, 360, canvas.width, 40);
+
+            // Draw Ball
+            ctx.beginPath();
+            ctx.arc(ball.x, ball.y, ball.radius, 0, Math.PI * 2);
+            ctx.fillStyle = "red";
+            ctx.fill();
+            ctx.strokeStyle = "white";
+            ctx.stroke();
+            ctx.closePath();
+
+            // Update Physics
+            if (document.getElementById('gravityBtn').checked && ball.y < 350) {
+                ball.vy += gravityForce;
+            }
+
+            if (document.getElementById('frictionBtn').checked) {
+                ball.vx *= frictionForce;
+                ball.vy *= frictionForce;
+            }
+
+            // Apply Velocity
+            ball.x += ball.vx;
+            ball.y += ball.vy;
+
+            // Bounce/Floor Logic
+            if (ball.y > 350) {
+                ball.y = 350;
+                ball.vy *= -0.6; // Lose energy on bounce
+            }
+
+            // Update Status Text
+            if (Math.abs(ball.vx) < 0.1 && Math.abs(ball.vy) < 0.1) {
+                stateText.innerText = "Inertia of Rest (Stationary)";
+            } else {
+                stateText.innerText = "Inertia of Motion (Constant V unless forced)";
+            }
+
+            requestAnimationFrame(draw);
+        }
+
+        // Apply Force (The "Hit")
+        canvas.addEventListener('mousedown', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            const mouseX = e.clientX - rect.left;
+            const mouseY = e.clientY - rect.top;
+            
+            // Calculate direction from ball to mouse
+            ball.vx = (mouseX - ball.x) * 0.1;
+            ball.vy = (mouseY - ball.y) * 0.1;
+        });
+
+        function resetBall() {
+            ball.x = 100; ball.y = 350; ball.vx = 0; ball.vy = 0;
+        }
+
+        draw();
+    </script>
+
+    <div style="max-width: 600px; margin: 20px auto; text-align: left;">
+        <h3>Try these Experiments:</h3>
+        <ul>
+            <li><strong>The "Space Cricket" Experiment:</strong> Uncheck both Friction and Gravity. Hit the ball. It will never stop or fall! That is pure 1st Law.</li>
+            <li><strong>The "Moon" Experiment:</strong> Keep Gravity ON but Friction OFF. Hit a high catch. The ball will bounce forever because there is no air/ground friction to steal its energy.</li>
+        </ul>
+    </div>
+</body>
+</html>

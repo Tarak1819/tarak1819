@@ -1,0 +1,1029 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mirror Master: Laws of Reflection</title>
+    <style>
+        :root {
+            --bg-color: #0a0a12;
+            --panel-bg: #11111a;
+            --grid-line: #1f1f2e;
+            --neon-cyan: #00f3ff;
+            --neon-green: #00ff41;
+            --neon-red: #ff0055;
+            --neon-yellow: #fcee0a;
+            --text-color: #e0e0e0;
+        }
+
+        body {
+            font-family: 'Courier New', Courier, monospace;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* Layout */
+        #game-container {
+            display: flex;
+            width: 100%;
+            height: 100%;
+        }
+
+        #game-area {
+            flex: 2;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            position: relative;
+            background: radial-gradient(circle at center, #1a1a24 0%, #000 100%);
+        }
+
+        #control-panel {
+            flex: 1;
+            background-color: var(--panel-bg);
+            border-left: 2px solid var(--neon-cyan);
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            box-shadow: -10px 0 20px rgba(0, 243, 255, 0.1);
+            overflow-y: auto;
+        }
+
+        /* Typography */
+        h1 { margin: 0; color: var(--neon-cyan); text-transform: uppercase; letter-spacing: 2px; text-shadow: 0 0 10px var(--neon-cyan); font-size: 24px; }
+        h2 { margin: 0; color: var(--neon-green); font-size: 18px; }
+        h3 { font-size: 14px; color: #888; margin-bottom: 5px; }
+
+        /* Board & Grid */
+        #board-wrapper {
+            position: relative;
+            width: 600px;
+            height: 600px;
+        }
+
+        #grid {
+            display: grid;
+            grid-template-columns: repeat(10, 1fr);
+            grid-template-rows: repeat(10, 1fr);
+            width: 100%;
+            height: 100%;
+            border: 2px solid var(--neon-cyan);
+            background-color: rgba(0,0,0,0.5);
+        }
+
+        .cell {
+            border: 1px solid var(--grid-line);
+            position: relative;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .cell:hover { background-color: rgba(0, 243, 255, 0.1); }
+        
+        /* Objects */
+        .wall {
+            background-color: #333;
+            background-image: repeating-linear-gradient(45deg, #222 0, #222 10px, #333 10px, #333 20px);
+            border: 1px solid var(--neon-red);
+            cursor: not-allowed;
+        }
+
+        .source {
+            background-color: rgba(0, 243, 255, 0.2);
+            border: 2px solid var(--neon-cyan);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        
+        .source::after {
+            content: "S";
+            font-weight: bold;
+            color: var(--neon-cyan);
+        }
+
+        .target {
+            background-color: rgba(0, 255, 65, 0.2);
+            border: 2px solid var(--neon-green);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            border-radius: 50%;
+        }
+
+        .mirror-obj {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 80%;
+            height: 4px;
+            background-color: var(--neon-cyan);
+            box-shadow: 0 0 8px var(--neon-cyan);
+            transform-origin: center;
+            pointer-events: none; /* Let clicks pass to cell */
+        }
+
+        .cell.selected .mirror-obj {
+            background-color: white;
+            box-shadow: 0 0 12px white;
+        }
+
+        /* SVG Overlay for Laser */
+        #laser-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 10;
+        }
+
+        /* Controls */
+        .control-group {
+            background: #1a1a24;
+            padding: 15px;
+            border: 1px solid #333;
+            border-radius: 4px;
+        }
+
+        label { display: block; margin-bottom: 5px; font-size: 12px; }
+        
+        input[type="range"] {
+            width: 100%;
+            accent-color: var(--neon-cyan);
+        }
+
+        .btn-row { display: flex; gap: 10px; }
+        
+        button {
+            flex: 1;
+            padding: 10px;
+            background: transparent;
+            border: 1px solid var(--neon-cyan);
+            color: var(--neon-cyan);
+            font-family: inherit;
+            font-weight: bold;
+            cursor: pointer;
+            text-transform: uppercase;
+            transition: all 0.3s;
+        }
+
+        button:hover { background: var(--neon-cyan); color: #000; box-shadow: 0 0 15px var(--neon-cyan); }
+        button.reset { border-color: var(--neon-red); color: var(--neon-red); }
+        button.reset:hover { background: var(--neon-red); box-shadow: 0 0 15px var(--neon-red); }
+
+        /* Tracer Arrow on Source */
+        #source-tracer {
+            position: absolute;
+            width: 0; 
+            height: 0; 
+            border-top: 5px solid transparent;
+            border-bottom: 5px solid transparent; 
+            border-left: 15px solid var(--neon-yellow);
+            transform-origin: 0 50%; /* Pivot at the flat back */
+            z-index: 5;
+            display: none; /* Hidden until source placed */
+        }
+
+        /* Popups */
+        .modal {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.85);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 100;
+        }
+        
+        .modal.hidden { display: none; }
+
+        .modal-content {
+            background: var(--panel-bg);
+            border: 2px solid var(--neon-cyan);
+            padding: 30px;
+            max-width: 500px;
+            text-align: center;
+            box-shadow: 0 0 30px rgba(0, 243, 255, 0.2);
+        }
+
+        .physics-info {
+            text-align: left;
+            font-size: 14px;
+            line-height: 1.5;
+            margin: 15px 0;
+            padding: 10px;
+            background: rgba(255,255,255,0.05);
+            border-left: 3px solid var(--neon-green);
+        }
+
+        #physics-diagram {
+            width: 100%;
+            height: 100px;
+            margin: 10px 0;
+            background: #000;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="start-modal" class="modal">
+        <div class="modal-content">
+            <h1>Mirror Master</h1>
+            <h2>Laws of Reflection</h2>
+            <div class="physics-info">
+                <p><strong>The Law:</strong> The Angle of Incidence (i) equals the Angle of Reflection (r).</p>
+                <p>Angles are measured relative to the <em>Normal</em> (a line perpendicular to the mirror surface).</p>
+            </div>
+            <ul style="text-align: left; font-size: 13px;">
+                <li>Click empty cells to add mirrors.</li>
+                <li>Click a mirror to select it, then use the slider to rotate it.</li>
+                <li>Adjust the Source Angle slider to aim the laser.</li>
+                <li>Avoid Walls (Striped blocks). Hit the Green Target.</li>
+            </ul>
+            <button onclick="startGame()">Start Simulation</button>
+        </div>
+    </div>
+
+    <div id="result-modal" class="modal hidden">
+        <div class="modal-content">
+            <h1 id="result-title">Level Complete</h1>
+            <p id="result-msg">Physics explanation goes here.</p>
+            <div id="angle-readout" class="physics-info"></div>
+            <button id="next-level-btn" onclick="nextLevel()">Next Level</button>
+            <button onclick="hideModal('result-modal')">Close</button>
+        </div>
+    </div>
+
+    <div id="game-container">
+        <div id="game-area">
+            <div id="board-wrapper">
+                <div id="grid"></div>
+                <div id="source-tracer"></div>
+                <svg id="laser-layer">
+                    </svg>
+            </div>
+        </div>
+
+        <div id="control-panel">
+            <h1>Mirror Master</h1>
+            <h2 id="level-indicator">Level 1</h2>
+            <p style="font-size:12px; opacity:0.7;">Difficulty: <span id="diff-text">Tutorial</span></p>
+
+            <div class="control-group">
+                <h3>Source Settings</h3>
+                <label>Launch Angle: <span id="source-angle-val">0</span>°</label>
+                <input type="range" id="source-slider" min="0" max="359" value="0">
+            </div>
+
+            <div class="control-group">
+                <h3>Selected Mirror</h3>
+                <div id="mirror-controls" style="opacity: 0.5; pointer-events: none;">
+                    <label>Mirror Angle: <span id="mirror-angle-val">135</span>°</label>
+                    <input type="range" id="mirror-slider" min="0" max="179" value="135">
+                    <button onclick="removeSelectedMirror()" style="margin-top:10px; border-color:var(--neon-red); font-size:10px;">Remove Mirror</button>
+                </div>
+                <p id="mirror-hint" style="font-size:10px; color:#666;">Click a mirror on grid to edit</p>
+            </div>
+
+            <div class="btn-row">
+                <button onclick="fireLaser()">Fire Laser</button>
+                <button class="reset" onclick="resetLevel()">Reset</button>
+            </div>
+            <button onclick="showHelp()">Help / Laws</button>
+            
+            <div id="status-log" style="margin-top: auto; font-size: 12px; height: 100px; overflow-y: auto; color: var(--neon-cyan); border-top: 1px solid #333; padding-top: 10px;">
+                > System initialized...<br>
+                > Awaiting inputs...
+            </div>
+        </div>
+    </div>
+
+<script>
+    // --- Configuration ---
+    const GRID_SIZE = 10; // 10x10
+    const CELL_SIZE = 60; // 600px / 10
+    const MAX_REFLECTIONS = 20;
+    const ANIMATION_SPEED = 5; // px per frame
+    
+    // --- State ---
+    let currentLevel = 0;
+    let mirrors = []; // Array of {r, c, angle}
+    let selectedMirrorIndex = -1;
+    let sourceAngle = 0;
+    let isAnimating = false;
+    let animationReq;
+
+    // --- Levels ---
+    // S: Source, T: Target, W: Wall, E: Empty (default)
+    // Angles are for predefined difficulty, but user can change source angle
+    const levels = [
+        {
+            name: "Level 1: Direct Line",
+            difficulty: "Intro",
+            layout: [
+                "..........",
+                "..........",
+                "..........",
+                "..........",
+                ".S......T.",
+                "..........",
+                "..........",
+                "..........",
+                "..........",
+                ".........."
+            ],
+            defaultSourceAngle: 0,
+            hint: "Sometimes a straight line is the best path."
+        },
+        {
+            name: "Level 2: The Block",
+            difficulty: "Easy",
+            layout: [
+                "..........",
+                "..........",
+                "....W.....",
+                "....W.....",
+                ".S..W...T.",
+                "....W.....",
+                "....W.....",
+                "..........",
+                "..........",
+                ".........."
+            ],
+            defaultSourceAngle: 45,
+            hint: "Use laws of reflection to bypass the wall."
+        },
+        {
+            name: "Level 3: The Corner",
+            difficulty: "Medium",
+            layout: [
+                "..........",
+                "..........",
+                "..........",
+                "..........",
+                ".S..WWWWW.",
+                "....W...T.",
+                "....W.....",
+                "....W.....",
+                "..........",
+                ".........."
+            ],
+            defaultSourceAngle: 315,
+            hint: "Think about corners."
+        },
+        {
+            name: "Level 4: Zig Zag",
+            difficulty: "Hard",
+            layout: [
+                "..........",
+                ".W..W..W..",
+                ".W..W..W..",
+                ".S..W..T..",
+                ".W..W..W..",
+                ".W..W..W..",
+                "..........",
+                "..........",
+                "..........",
+                ".........."
+            ],
+            defaultSourceAngle: 45,
+            hint: "Multiple reflections required."
+        },
+        {
+            name: "Level 5: Narrow Gap",
+            difficulty: "Expert",
+            layout: [
+                "WWWWWWWWWW",
+                "W........W",
+                "W.WWWWWW.W",
+                "W.W....W.W",
+                "W.S....T.W",
+                "W.W....W.W",
+                "W.WWWWWW.W",
+                "W........W",
+                "WWWWWWWWWW",
+                ".........."
+            ],
+            defaultSourceAngle: 90,
+            hint: "Precision is key."
+        },
+        {
+            name: "Level 6: Bunker",
+            difficulty: "Master",
+            layout: [
+                "..........",
+                "..WWWWWW..",
+                "..W....W..",
+                "..W.ST.W..",
+                "..W....W..",
+                "..WW..WW..",
+                "..........",
+                "..........",
+                "..........",
+                ".........."
+            ],
+            defaultSourceAngle: 270,
+            hint: "Escape the bunker first."
+        },
+        {
+            name: "Level 7: The Maze",
+            difficulty: "Impossible",
+            layout: [
+                "W.W.W.W.W.",
+                ".S.W.W.W.T",
+                "W.W.W.W.W.",
+                ".W.W.W.W.W",
+                "W.W.W.W.W.",
+                ".W.W.W.W.W",
+                "W.W.W.W.W.",
+                ".W.W.W.W.W",
+                "..........",
+                ".........."
+            ],
+            defaultSourceAngle: 45,
+            hint: "Good luck."
+        }
+    ];
+
+    let currentMap = []; // 2D array of grid content
+    let sourcePos = {r:0, c:0};
+    let targetPos = {r:0, c:0};
+
+    // --- DOM Elements ---
+    const gridEl = document.getElementById('grid');
+    const laserLayer = document.getElementById('laser-layer');
+    const logEl = document.getElementById('status-log');
+    const sourceSlider = document.getElementById('source-slider');
+    const mirrorSlider = document.getElementById('mirror-slider');
+    const tracer = document.getElementById('source-tracer');
+
+    // --- Initialization ---
+    function init() {
+        sourceSlider.addEventListener('input', (e) => {
+            sourceAngle = parseInt(e.target.value);
+            document.getElementById('source-angle-val').innerText = sourceAngle;
+            updateTracer();
+        });
+
+        mirrorSlider.addEventListener('input', (e) => {
+            if(selectedMirrorIndex > -1) {
+                mirrors[selectedMirrorIndex].angle = parseInt(e.target.value);
+                document.getElementById('mirror-angle-val').innerText = mirrors[selectedMirrorIndex].angle;
+                renderMirrors();
+            }
+        });
+
+        loadLevel(0);
+    }
+
+    function startGame() {
+        document.getElementById('start-modal').classList.add('hidden');
+    }
+
+    function showHelp() {
+        document.getElementById('start-modal').classList.remove('hidden');
+    }
+
+    function loadLevel(idx) {
+        currentLevel = idx;
+        const levelData = levels[currentLevel];
+        
+        document.getElementById('level-indicator').innerText = levelData.name;
+        document.getElementById('diff-text').innerText = levelData.difficulty;
+        
+        mirrors = [];
+        selectedMirrorIndex = -1;
+        updateMirrorControls();
+        
+        // Parse Layout
+        gridEl.innerHTML = '';
+        currentMap = [];
+        
+        for(let r=0; r<GRID_SIZE; r++) {
+            let rowData = [];
+            for(let c=0; c<GRID_SIZE; c++) {
+                const char = levelData.layout[r][c];
+                const cell = document.createElement('div');
+                cell.className = 'cell';
+                cell.dataset.r = r;
+                cell.dataset.c = c;
+                cell.onclick = () => handleCellClick(r, c);
+
+                if(char === 'W') {
+                    cell.classList.add('wall');
+                    rowData.push('wall');
+                } else if (char === 'S') {
+                    cell.classList.add('source');
+                    rowData.push('source');
+                    sourcePos = {r, c};
+                } else if (char === 'T') {
+                    cell.classList.add('target');
+                    rowData.push('target');
+                    targetPos = {r, c};
+                } else {
+                    rowData.push(null);
+                }
+                gridEl.appendChild(cell);
+            }
+            currentMap.push(rowData);
+        }
+
+        // Set source Angle
+        sourceAngle = levelData.defaultSourceAngle;
+        sourceSlider.value = sourceAngle;
+        document.getElementById('source-angle-val').innerText = sourceAngle;
+
+        clearLaser();
+        updateTracer();
+        log(`Loaded ${levelData.name}`);
+    }
+
+    function handleCellClick(r, c) {
+        if(isAnimating) return;
+        const type = currentMap[r][c];
+        if(type === 'wall' || type === 'source' || type === 'target') return;
+
+        // Check if mirror exists
+        const existingIdx = mirrors.findIndex(m => m.r === r && m.c === c);
+
+        if(existingIdx > -1) {
+            // Select existing
+            selectMirror(existingIdx);
+        } else {
+            // Create new
+            mirrors.push({r, c, angle: 135});
+            selectMirror(mirrors.length - 1);
+        }
+        renderMirrors();
+    }
+
+    function selectMirror(idx) {
+        selectedMirrorIndex = idx;
+        const m = mirrors[idx];
+        mirrorSlider.value = m.angle;
+        document.getElementById('mirror-angle-val').innerText = m.angle;
+        updateMirrorControls();
+        renderMirrors();
+        log(`Mirror selected at [${m.r}, ${m.c}]`);
+    }
+
+    function removeSelectedMirror() {
+        if(selectedMirrorIndex > -1) {
+            mirrors.splice(selectedMirrorIndex, 1);
+            selectedMirrorIndex = -1;
+            updateMirrorControls();
+            renderMirrors();
+        }
+    }
+
+    function updateMirrorControls() {
+        const controls = document.getElementById('mirror-controls');
+        if(selectedMirrorIndex > -1) {
+            controls.style.opacity = 1;
+            controls.style.pointerEvents = 'all';
+        } else {
+            controls.style.opacity = 0.5;
+            controls.style.pointerEvents = 'none';
+        }
+    }
+
+    function renderMirrors() {
+        // Clear old mirror visuals only
+        document.querySelectorAll('.mirror-obj').forEach(el => el.remove());
+        document.querySelectorAll('.cell.selected').forEach(el => el.classList.remove('selected'));
+
+        mirrors.forEach((m, idx) => {
+            const cellIndex = m.r * GRID_SIZE + m.c;
+            const cell = gridEl.children[cellIndex];
+            
+            const div = document.createElement('div');
+            div.className = 'mirror-obj';
+            // Adjust rotation logic to match CSS transform
+            div.style.transform = `translate(-50%, -50%) rotate(${m.angle}deg)`;
+            
+            cell.appendChild(div);
+
+            if(idx === selectedMirrorIndex) {
+                cell.classList.add('selected');
+            }
+        });
+    }
+
+    function updateTracer() {
+        // Position tracer on source
+        const cellIndex = sourcePos.r * GRID_SIZE + sourcePos.c;
+        const cell = gridEl.children[cellIndex];
+        const rect = cell.getBoundingClientRect();
+        const boardRect = document.getElementById('board-wrapper').getBoundingClientRect();
+
+        const centerX = (sourcePos.c * CELL_SIZE) + (CELL_SIZE / 2);
+        const centerY = (sourcePos.r * CELL_SIZE) + (CELL_SIZE / 2);
+
+        tracer.style.display = 'block';
+        tracer.style.left = centerX + 'px';
+        tracer.style.top = centerY + 'px';
+        tracer.style.transform = `translateY(-50%) rotate(${sourceAngle}deg)`;
+    }
+
+    function resetLevel() {
+        isAnimating = false;
+        cancelAnimationFrame(animationReq);
+        loadLevel(currentLevel);
+    }
+
+    function nextLevel() {
+        document.getElementById('result-modal').classList.add('hidden');
+        if(currentLevel < levels.length - 1) {
+            loadLevel(currentLevel + 1);
+        } else {
+            alert("You have mastered all levels!");
+        }
+    }
+
+    function hideModal(id) {
+        document.getElementById(id).classList.add('hidden');
+    }
+
+    function log(msg) {
+        const p = document.createElement('div');
+        p.innerText = "> " + msg;
+        logEl.appendChild(p);
+        logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    // --- Math & Physics Engine ---
+
+    function toRad(deg) { return deg * Math.PI / 180; }
+    function toDeg(rad) { return rad * 180 / Math.PI; }
+
+    function fireLaser() {
+        if(isAnimating) return;
+        clearLaser();
+        log("Laser Firing...");
+        
+        // Calculate the full path first
+        const pathData = calculatePath();
+        
+        // Animate the drawing of the path
+        animatePath(pathData);
+    }
+
+    function clearLaser() {
+        laserLayer.innerHTML = '';
+    }
+
+    function calculatePath() {
+        let x = (sourcePos.c * CELL_SIZE) + (CELL_SIZE/2);
+        let y = (sourcePos.r * CELL_SIZE) + (CELL_SIZE/2);
+        
+        // Direction vector
+        let dirX = Math.cos(toRad(sourceAngle));
+        let dirY = Math.sin(toRad(sourceAngle));
+
+        const segments = [];
+        segments.push({x, y, type: 'start'});
+
+        for(let step=0; step<MAX_REFLECTIONS; step++) {
+            const result = castRay(x, y, dirX, dirY);
+            
+            if(!result) break;
+
+            segments.push(result);
+
+            x = result.x;
+            y = result.y;
+
+            if(result.type === 'mirror') {
+                // Reflect: R = D - 2(D.N)N
+                // Mirror Normal
+                let mirrorAngleRad = toRad(result.obj.angle);
+                // Normal is perpendicular to mirror. If mirror is 135 (/), normal is 45.
+                // We need to check both normals (+90 and -90) and see which one opposes the incoming ray
+                
+                // Let's use standard line reflection math.
+                // Vector along mirror: (cos a, sin a)
+                // Normal: (-sin a, cos a)
+                
+                let nx = -Math.sin(mirrorAngleRad);
+                let ny = Math.cos(mirrorAngleRad);
+                
+                let dot = dirX * nx + dirY * ny;
+                
+                let rx = dirX - 2 * dot * nx;
+                let ry = dirY - 2 * dot * ny;
+
+                // Physics Check: Angle of Incidence
+                // cos(theta) = (A . B) / (|A||B|)
+                // Incoming vector is (-dirX, -dirY). Normal is (nx, ny).
+                // We use absolute value of dot product to get acute angle
+                let incidentAngle = Math.acos(Math.abs(dot)) * (180/Math.PI);
+                
+                result.normalAngle = toDeg(Math.atan2(ny, nx));
+                result.incident = incidentAngle;
+                result.reflect = incidentAngle; // Ideal physics
+
+                dirX = rx;
+                dirY = ry;
+                
+                // Nudge slightly to avoid self-intersection on next loop
+                x += dirX * 0.1;
+                y += dirY * 0.1;
+
+            } else {
+                break; // Hit wall or boundary or target
+            }
+        }
+        return segments;
+    }
+
+    // Raycast to find nearest intersection
+    function castRay(x, y, dx, dy) {
+        let nearest = null;
+        let minDesc = Infinity;
+
+        // 1. Check Board Boundaries
+        const boundaries = [
+            {p1: {x:0,y:0}, p2: {x:600,y:0}, type:'boundary'}, // Top
+            {p1: {x:600,y:0}, p2: {x:600,y:600}, type:'boundary'}, // Right
+            {p1: {x:600,y:600}, p2: {x:0,y:600}, type:'boundary'}, // Bottom
+            {p1: {x:0,y:600}, p2: {x:0,y:0}, type:'boundary'}  // Left
+        ];
+
+        // 2. Check Walls
+        // To optimize, we treat walls as 4 segments of a box
+        for(let r=0; r<GRID_SIZE; r++){
+            for(let c=0; c<GRID_SIZE; c++){
+                if(currentMap[r][c] === 'wall') {
+                    let wx = c * CELL_SIZE;
+                    let wy = r * CELL_SIZE;
+                    boundaries.push({p1:{x:wx, y:wy}, p2:{x:wx+CELL_SIZE, y:wy}, type:'wall'});
+                    boundaries.push({p1:{x:wx+CELL_SIZE, y:wy}, p2:{x:wx+CELL_SIZE, y:wy+CELL_SIZE}, type:'wall'});
+                    boundaries.push({p1:{x:wx+CELL_SIZE, y:wy+CELL_SIZE}, p2:{x:wx, y:wy+CELL_SIZE}, type:'wall'});
+                    boundaries.push({p1:{x:wx, y:wy+CELL_SIZE}, p2:{x:wx, y:wy}, type:'wall'});
+                }
+            }
+        }
+
+        // Check Wall/Boundary Intersections
+        boundaries.forEach(b => {
+            const hit = getIntersection(x, y, dx, dy, b.p1.x, b.p1.y, b.p2.x, b.p2.y);
+            if(hit && hit.t < minDesc && hit.t > 0.1) { // 0.1 epsilon
+                minDesc = hit.t;
+                nearest = {x: hit.x, y: hit.y, type: b.type, t: hit.t};
+            }
+        });
+
+        // 3. Check Mirrors (Line Segments)
+        // A mirror in a cell is a line of length ~50px centered in cell
+        const M_LEN = 40;
+        mirrors.forEach(m => {
+            let cx = m.c * CELL_SIZE + CELL_SIZE/2;
+            let cy = m.r * CELL_SIZE + CELL_SIZE/2;
+            let rad = toRad(m.angle);
+            let p1x = cx - (M_LEN/2) * Math.cos(rad);
+            let p1y = cy - (M_LEN/2) * Math.sin(rad);
+            let p2x = cx + (M_LEN/2) * Math.cos(rad);
+            let p2y = cy + (M_LEN/2) * Math.sin(rad);
+
+            const hit = getIntersection(x, y, dx, dy, p1x, p1y, p2x, p2y);
+            if(hit && hit.t < minDesc && hit.t > 0.1) {
+                minDesc = hit.t;
+                nearest = {x: hit.x, y: hit.y, type: 'mirror', obj: m, t: hit.t};
+            }
+        });
+
+        // 4. Check Target (Circle Center) - Simplified to Hitbox
+        // Check if ray passes close to center of target
+        let tx = targetPos.c * CELL_SIZE + CELL_SIZE/2;
+        let ty = targetPos.r * CELL_SIZE + CELL_SIZE/2;
+        let distToTarget = pointToLineDistance(tx, ty, x, y, x + dx*1000, y + dy*1000);
+        
+        // Projection logic to find WHERE on the ray it hits the target area
+        // V_target = P_target - P_ray_origin
+        // t = V_target dot D_ray
+        let vtx = tx - x;
+        let vty = ty - y;
+        let t_target = vtx * dx + vty * dy;
+
+        // If distance is small enough (radius 20) and t_target is less than other hits
+        if(distToTarget < 20 && t_target > 0 && t_target < minDesc) {
+            nearest = {x: x + dx*t_target, y: y + dy*t_target, type: 'win', t: t_target};
+        }
+
+        return nearest;
+    }
+
+    // Standard ray-segment intersection
+    function getIntersection(rayX, rayY, dx, dy, x1, y1, x2, y2) {
+        const r_px = rayX; const r_py = rayY;
+        const r_dx = dx;   const r_dy = dy;
+        const s_px = x1;   const s_py = y1;
+        const s_dx = x2-x1; const s_dy = y2-y1;
+
+        const r_mag = Math.sqrt(r_dx*r_dx + r_dy*r_dy);
+        const s_mag = Math.sqrt(s_dx*s_dx + s_dy*s_dy);
+
+        if(r_dx/r_mag === s_dx/s_mag && r_dy/r_mag === s_dy/s_mag) return null; // Parallel
+
+        const T2 = (r_dx*(s_py-r_py) + r_dy*(r_px-s_px))/(s_dx*r_dy - s_dy*r_dx);
+        const T1 = (s_px+s_dx*T2-r_px)/r_dx;
+
+        if(T1 > 0 && T2 >= 0 && T2 <= 1) { // T1>0 means forward ray, T2 0-1 means on segment
+            return { x: r_px + r_dx*T1, y: r_py + r_dy*T1, t: T1 };
+        }
+        return null;
+    }
+
+    function pointToLineDistance(px, py, x1, y1, x2, y2) {
+        const A = px - x1;
+        const B = py - y1;
+        const C = x2 - x1;
+        const D = y2 - y1;
+
+        const dot = A * C + B * D;
+        const len_sq = C * C + D * D;
+        let param = -1;
+        if (len_sq != 0) //in case of 0 length line
+            param = dot / len_sq;
+
+        let xx, yy;
+
+        if (param < 0) {
+            xx = x1; yy = y1;
+        } else if (param > 1) {
+            xx = x2; yy = y2;
+        } else {
+            xx = x1 + param * C;
+            yy = y1 + param * D;
+        }
+
+        const dx = px - xx;
+        const dy = py - yy;
+        return Math.sqrt(dx * dx + dy * dy);
+    }
+
+    // --- Animation & Rendering ---
+
+    function animatePath(points) {
+        isAnimating = true;
+        let segmentIndex = 0;
+        let progress = 0; // 0 to 1
+        
+        let p1 = points[0];
+        let p2 = points[1];
+        let segmentLen = Math.sqrt(Math.pow(p2.x - p1.x, 2) + Math.pow(p2.y - p1.y, 2));
+
+        // Create main laser line
+        const polyline = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
+        polyline.setAttribute("points", `${p1.x},${p1.y}`);
+        polyline.setAttribute("stroke", "#ff0055");
+        polyline.setAttribute("stroke-width", "3");
+        polyline.setAttribute("fill", "none");
+        polyline.setAttribute("stroke-linecap", "round");
+        // Add Glow
+        polyline.style.filter = "drop-shadow(0 0 5px #ff0055)";
+        laserLayer.appendChild(polyline);
+
+        function step() {
+            // Move physics based
+            let moveDist = ANIMATION_SPEED;
+            let currentX = parseFloat(polyline.getAttribute("points").split(" ").pop().split(",")[0]);
+            let currentY = parseFloat(polyline.getAttribute("points").split(" ").pop().split(",")[1]);
+
+            // Vector math to add next point
+            let dx = p2.x - p1.x;
+            let dy = p2.y - p1.y;
+            let len = Math.sqrt(dx*dx + dy*dy);
+            
+            progress += moveDist / len;
+
+            if (progress >= 1) {
+                // Segment finished
+                // Force end point
+                let currentPoints = polyline.getAttribute("points");
+                polyline.setAttribute("points", currentPoints + ` ${p2.x},${p2.y}`);
+
+                // Check for physics event (Reflection)
+                if(p2.type === 'mirror') {
+                    showPhysicsEvent(p2);
+                    // Pause for effect
+                    setTimeout(() => {
+                        clearPhysicsOverlay();
+                        nextSegment();
+                    }, 1500);
+                    return; // Stop animation loop until timeout fires
+                } else if (p2.type === 'win') {
+                    showResult(true, "Target Acquired!");
+                    isAnimating = false;
+                    return;
+                } else if (p2.type === 'wall') {
+                    showResult(false, "Hit a Wall. Light is absorbed.");
+                    isAnimating = false;
+                    return;
+                } else if (p2.type === 'boundary') {
+                    showResult(false, "Missed. Laser went out of bounds.");
+                    isAnimating = false;
+                    return;
+                }
+            } else {
+                // Update tip
+                let newX = p1.x + dx * progress;
+                let newY = p1.y + dy * progress;
+                let currentPoints = polyline.getAttribute("points").split(" ");
+                // Remove last point (tip) and replace
+                if(currentPoints.length > segmentIndex + 1) {
+                    currentPoints.pop(); 
+                }
+                // Actually, for a growing polyline, we want to append points.
+                // But for smooth growing, we update the *last* point.
+                // Reconstruct points string
+                let ptsStr = "";
+                for(let i=0; i<=segmentIndex; i++) {
+                    ptsStr += `${points[i].x},${points[i].y} `;
+                }
+                ptsStr += `${newX},${newY}`;
+                polyline.setAttribute("points", ptsStr);
+                
+                animationReq = requestAnimationFrame(step);
+            }
+        }
+
+        function nextSegment() {
+            segmentIndex++;
+            if(segmentIndex < points.length - 1) {
+                p1 = points[segmentIndex];
+                p2 = points[segmentIndex+1];
+                progress = 0;
+                requestAnimationFrame(step);
+            }
+        }
+
+        requestAnimationFrame(step);
+    }
+
+    function showPhysicsEvent(pointData) {
+        // Draw Normal Line
+        const normalLen = 40;
+        const rad = toRad(pointData.normalAngle);
+        const nx = Math.cos(rad) * normalLen;
+        const ny = Math.sin(rad) * normalLen;
+
+        const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+        line.setAttribute("x1", pointData.x - nx);
+        line.setAttribute("y1", pointData.y - ny);
+        line.setAttribute("x2", pointData.x + nx);
+        line.setAttribute("y2", pointData.y + ny);
+        line.setAttribute("stroke", "#ffffff");
+        line.setAttribute("stroke-width", "1");
+        line.setAttribute("stroke-dasharray", "4");
+        line.setAttribute("class", "phys-overlay");
+        laserLayer.appendChild(line);
+
+        // Text
+        const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+        text.setAttribute("x", pointData.x + 10);
+        text.setAttribute("y", pointData.y - 10);
+        text.setAttribute("fill", "#fff");
+        text.setAttribute("font-size", "12");
+        text.setAttribute("class", "phys-overlay");
+        text.textContent = `i=${Math.round(pointData.incident)}° r=${Math.round(pointData.reflect)}°`;
+        laserLayer.appendChild(text);
+    }
+
+    function clearPhysicsOverlay() {
+        document.querySelectorAll('.phys-overlay').forEach(e => e.remove());
+    }
+
+    function showResult(success, msg) {
+        const modal = document.getElementById('result-modal');
+        const title = document.getElementById('result-title');
+        const text = document.getElementById('result-msg');
+        const btn = document.getElementById('next-level-btn');
+
+        modal.classList.remove('hidden');
+        if(success) {
+            title.innerText = "Level Complete";
+            title.style.color = "var(--neon-green)";
+            text.innerHTML = `${msg}<br><br>The light reflected correctly off surfaces according to the law where angle of incidence equals angle of reflection.`;
+            btn.style.display = 'inline-block';
+        } else {
+            title.innerText = "Mission Failed";
+            title.style.color = "var(--neon-red)";
+            text.innerHTML = `${msg}<br><br>Remember: The angle at which the light hits the mirror is the same angle at which it leaves. Check your mirror rotation.`;
+            btn.style.display = 'none';
+        }
+    }
+
+    // Start
+    init();
+
+</script>
+</body>
+</html>

@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Newton's First Law - Interactive Carrom Lab</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #2c1e14; color: white; display: flex; flex-direction: column; align-items: center; margin: 0; }
+        .hud { display: flex; justify-content: space-between; width: 600px; padding: 15px; background: rgba(0,0,0,0.5); border-radius: 0 0 15px 15px; margin-bottom: 10px; }
+        #board-wrapper { position: relative; border: 12px solid #3d2b1f; border-radius: 10px; box-shadow: 0 20px 50px rgba(0,0,0,0.9); }
+        canvas { background: #e3ac76; cursor: crosshair; }
+        
+        /* Educational Pop-ups */
+        .overlay { display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 10; border-radius: 8px; }
+        .box { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 80%; background: white; color: #333; padding: 25px; border-radius: 15px; box-shadow: 0 0 30px #000; }
+        
+        .theory-header { color: #c0392b; border-bottom: 2px solid #eee; padding-bottom: 10px; margin-bottom: 15px; }
+        .case-item { background: #f9f9f9; padding: 10px; border-left: 5px solid #27ae60; margin: 10px 0; }
+        
+        #timer-bar-container { width: 100%; height: 8px; background: #ddd; border-radius: 4px; margin-top: 20px; overflow: hidden; }
+        #timer-bar-fill { height: 100%; background: #c0392b; width: 100%; transition: width 40s linear; }
+
+        .btn-opt { display: block; width: 100%; padding: 12px; margin: 8px 0; border: 1px solid #ccc; background: #fff; cursor: pointer; border-radius: 5px; text-align: left; font-size: 15px; }
+        .btn-opt:hover { background: #f0f0f0; border-color: #27ae60; }
+        .feedback { font-weight: bold; margin-top: 10px; }
+    </style>
+</head>
+<body>
+
+    <div class="hud">
+        <div>Score: <span id="score">0</span></div>
+        <div style="color:#f1c40f">Game Time: <span id="game-clock">03:00</span></div>
+        <div id="status-text">Mode: Free Play</div>
+    </div>
+
+    <div id="board-wrapper">
+        <canvas id="carromCanvas" width="600" height="600"></canvas>
+
+        <div id="theory-overlay" class="overlay">
+            <div class="box">
+                <h2 class="theory-header">First Law Case Studies</h2>
+                <div class="case-item">
+                    <strong>Case 1: Inertia of Rest</strong><br>
+                    The coins remained in the center hexagon until your striker applied an external force. Objects resist starting motion.
+                </div>
+                <div class="case-item">
+                    <strong>Case 2: Inertia of Motion</strong><br>
+                    Once hit, coins moved in a straight line. They only stopped because of friction (board) or hitting the frame.
+                </div>
+                <div id="timer-bar-container"><div id="timer-bar-fill"></div></div>
+                <p style="font-size: 12px; color: #777;">Reading time: 40s remaining. Disappearing automatically...</p>
+            </div>
+        </div>
+
+        <div id="quiz-overlay" class="overlay">
+            <div class="box">
+                <h3 id="q-title">Knowledge Check!</h3>
+                <p id="q-text"></p>
+                <div id="q-options"></div>
+                <div id="q-feedback" class="feedback"></div>
+            </div>
+        </div>
+    </div>
+
+    <p style="margin-top:20px; color:#aaa;">Instructions: Drag the striker backward and release to hit the coins.</p>
+
+    <script>
+        const canvas = document.getElementById('carromCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        let gameActive = true;
+        let timeLeft = 180; // 3 Minutes
+        let score = 0;
+        let striker = { x: 300, y: 480, r: 22, vx: 0, vy: 0, color: '#f5f5f5' };
+        let coins = [];
+
+        // Initialize 21 Coins (1 Queen, 10 Black, 10 White)
+        function initCoins() {
+            coins = [];
+            // Queen
+            coins.push({ x: 300, y: 300, r: 15, vx: 0, vy: 0, color: '#e74c3c', type: 'queen' });
+            
+            // Professional Hexagon Pattern
+            const layers = [
+                { count: 6, dist: 35 }, 
+                { count: 12, dist: 70 },
+                { count: 2, dist: 15, offset: 50 } // Fillers
+            ];
+            
+            let colorToggle = true;
+            layers.forEach(layer => {
+                for(let i=0; i<layer.count; i++) {
+                    let angle = (i / layer.count) * Math.PI * 2;
+                    coins.push({
+                        x: 300 + Math.cos(angle) * layer.dist,
+                        y: 300 + Math.sin(angle) * layer.dist,
+                        r: 15, vx: 0, vy: 0,
+                        color: colorToggle ? '#333' : '#fff'
+                    });
+                    colorToggle = !colorToggle;
+                }
+            });
+        }
+
+        function drawBoard() {
+            ctx.fillStyle = "#e3ac76"; // Wood
+            ctx.fillRect(0,0,600,600);
+            
+            // Markings
+            ctx.strokeStyle = "#5d4037";
+            ctx.lineWidth = 2;
+            ctx.strokeRect(40, 40, 520, 520);
+            ctx.beginPath(); ctx.arc(300, 300, 85, 0, Math.PI*2); ctx.stroke(); // Center Circle
+            
+            // Pockets
+            ctx.fillStyle = "#1a0a05";
+            [[0,0], [600,0], [0,600], [600,600]].forEach(p => {
+                ctx.beginPath(); ctx.arc(p[0], p[1], 35, 0, Math.PI*2); ctx.fill();
+            });
+        }
+
+        function update() {
+            if(!gameActive) return;
+
+            [striker, ...coins].forEach(obj => {
+                obj.x += obj.vx; obj.y += obj.vy;
+                obj.vx *= 0.985; obj.vy *= 0.985; // Friction
+
+                // Frame Bounce
+                if(obj.x < 15 || obj.x > 585) obj.vx *= -0.8;
+                if(obj.y < 15 || obj.y > 585) obj.vy *= -0.8;
+
+                // Pocket Check
+                [[0,0], [600,0], [0,600], [600,600]].forEach(p => {
+                    if(Math.hypot(obj.x - p[0], obj.y - p[1]) < 35) {
+                        if(obj === striker) { obj.x = 300; obj.y = 480; obj.vx = 0; obj.vy = 0; }
+                        else { obj.x = -1000; score += 10; document.getElementById('score').innerText = score; }
+                    }
+                });
+            });
+
+            // Collisions
+            let all = [striker, ...coins];
+            for(let i=0; i<all.length; i++) {
+                for(let j=i+1; j<all.length; j++) {
+                    let dx = all[j].x - all[i].x;
+                    let dy = all[j].y - all[i].y;
+                    let dist = Math.hypot(dx, dy);
+                    if(dist < all[i].r + all[j].r) {
+                        let angle = Math.atan2(dy, dx);
+                        let force = 0.5;
+                        all[i].vx -= Math.cos(angle) * force;
+                        all[i].vy -= Math.sin(angle) * force;
+                        all[j].vx += Math.cos(angle) * force;
+                        all[j].vy += Math.sin(angle) * force;
+                    }
+                }
+            }
+        }
+
+        function render() {
+            drawBoard();
+            ctx.fillStyle = striker.color;
+            ctx.beginPath(); ctx.arc(striker.x, striker.y, striker.r, 0, Math.PI*2); ctx.fill();
+            coins.forEach(c => {
+                ctx.fillStyle = c.color;
+                ctx.beginPath(); ctx.arc(c.x, c.y, c.r, 0, Math.PI*2); ctx.fill();
+            });
+            update();
+            requestAnimationFrame(render);
+        }
+
+        // Gameplay Loop
+        const gameInterval = setInterval(() => {
+            if(!gameActive) return;
+            timeLeft--;
+            let m = Math.floor(timeLeft/60);
+            let s = timeLeft%60;
+            document.getElementById('game-clock').innerText = `0${m}:${s<10?'0':''}${s}`;
+            
+            if(timeLeft <= 0) {
+                gameActive = false;
+                startEducationalPhase();
+            }
+        }, 1000);
+
+        function startEducationalPhase() {
+            document.getElementById('theory-overlay').style.display = 'block';
+            document.getElementById('timer-bar-fill').style.width = '0%';
+            
+            setTimeout(() => {
+                document.getElementById('theory-overlay').style.display = 'none';
+                startQuiz();
+            }, 40000);
+        }
+
+        function startQuiz() {
+            const quizOverlay = document.getElementById('quiz-overlay');
+            const qText = document.getElementById('q-text');
+            const qOpts = document.getElementById('q-options');
+            const feedback = document.getElementById('q-feedback');
+            
+            quizOverlay.style.display = 'block';
+            
+            const questions = [
+                {
+                    q: "Based on Case 1 (Inertia of Rest), why did the Red Queen not move for the first 10 seconds of the game?",
+                    opts: ["Because no unbalanced force (striker) acted on it.", "Because it was too heavy.", "Because friction was too high."],
+                    correct: 0
+                },
+                {
+                    q: "Based on Case 2 (Inertia of Motion), if we removed friction and the board frames, what would a hit coin do?",
+                    opts: ["Slow down eventually.", "Stop immediately.", "Move forever in a straight line."],
+                    correct: 2
+                }
+            ];
+
+            let q = questions[Math.floor(Math.random()*questions.length)];
+            qText.innerText = q.q;
+            q.opts.forEach((opt, i) => {
+                let b = document.createElement('button');
+                b.className = 'btn-opt';
+                b.innerText = opt;
+                b.onclick = () => {
+                    if(i === q.correct) {
+                        feedback.innerText = "Correct! You've mastered Newton's First Law.";
+                        feedback.style.color = "green";
+                        setTimeout(() => location.reload(), 3000);
+                    } else {
+                        feedback.innerText = "Incorrect. Remember: Objects resist change in motion!";
+                        feedback.style.color = "red";
+                    }
+                };
+                qOpts.appendChild(b);
+            });
+        }
+
+        // Drag Controls
+        let drag = false, sx, sy;
+        canvas.onmousedown = (e) => {
+            const r = canvas.getBoundingClientRect();
+            sx = e.clientX - r.left; sy = e.clientY - r.top;
+            if(Math.hypot(sx - striker.x, sy - striker.y) < striker.r) drag = true;
+        };
+        canvas.onmouseup = (e) => {
+            if(!drag) return;
+            const r = canvas.getBoundingClientRect();
+            striker.vx = (sx - (e.clientX - r.left)) * 0.15;
+            striker.vy = (sy - (e.clientY - r.top)) * 0.15;
+            drag = false;
+        };
+
+        initCoins();
+        render();
+    </script>
+</body>
+</html>

@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wave Master 11 - Superposition Lab</title>
+    <style>
+        body { font-family: sans-serif; background: #f0f2f5; padding: 20px; color: #333; }
+        .card { background: white; border-radius: 12px; padding: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); max-width: 800px; margin: auto; }
+        h1 { color: #1a73e8; text-align: center; }
+        .control-group { margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 8px; }
+        label { display: block; font-weight: bold; margin-bottom: 5px; }
+        input[type="range"] { width: 100%; margin-bottom: 15px; }
+        canvas { width: 100%; height: 200px; background: #000; border-radius: 8px; margin: 20px 0; }
+        .stats { display: flex; justify-content: space-around; background: #e8f0fe; padding: 10px; border-radius: 8px; font-weight: bold; }
+        button { width: 100%; padding: 12px; background: #1a73e8; color: white; border: none; border-radius: 6px; font-size: 16px; cursor: pointer; }
+        button:active { background: #1557b0; }
+    </style>
+</head>
+<body>
+
+<div class="card">
+    <h1>🔊 Wave Master 11</h1>
+    <p style="text-align: center;">Concept: <b>Superposition & Beats</b></p>
+
+    <canvas id="waveCanvas"></canvas>
+
+    <div class="stats">
+        <span>Freq 1: <span id="f1_val">440</span>Hz</span>
+        <span>Freq 2: <span id="f2_val">442</span>Hz</span>
+        <span style="color:red">Beats: <span id="beat_val">2</span>Hz</span>
+    </div>
+
+    <div class="control-group">
+        <label>Wave 1 Frequency (Hz)</label>
+        <input type="range" id="f1" min="200" max="800" value="440">
+        
+        <label>Wave 2 Frequency (Hz)</label>
+        <input type="range" id="f2" min="200" max="800" value="442">
+    </div>
+
+    <button onclick="toggleAudio()" id="playBtn">▶️ Play Sound</button>
+    
+    <div id="gameZone" style="margin-top:20px; border-top: 2px dashed #ccc; padding-top: 20px;">
+        <h3 style="color:#d93025">🎯 Mission: Match the Frequency!</h3>
+        <p>A "Mystery Frequency" is hidden. Adjust Wave 2 until the <b>pulsing (beats)</b> stops!</p>
+    </div>
+</div>
+
+<script>
+    let audioCtx;
+    let osc1, osc2, gain1, gain2;
+    let isPlaying = false;
+
+    const f1Input = document.getElementById('f1');
+    const f2Input = document.getElementById('f2');
+    const canvas = document.getElementById('waveCanvas');
+    const ctx = canvas.getContext('2d');
+
+    function initAudio() {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        osc1 = audioCtx.createOscillator();
+        osc2 = audioCtx.createOscillator();
+        gain1 = audioCtx.createGain();
+        gain2 = audioCtx.createGain();
+
+        osc1.connect(gain1).connect(audioCtx.destination);
+        osc2.connect(gain2).connect(audioCtx.destination);
+
+        gain1.gain.value = 0.2;
+        gain2.gain.value = 0.2;
+
+        osc1.start();
+        osc2.start();
+    }
+
+    function toggleAudio() {
+        if (!audioCtx) initAudio();
+        if (isPlaying) {
+            audioCtx.suspend();
+            document.getElementById('playBtn').innerText = "▶️ Play Sound";
+        } else {
+            audioCtx.resume();
+            document.getElementById('playBtn').innerText = "⏸️ Pause Sound";
+        }
+        isPlaying = !isPlaying;
+    }
+
+    function draw() {
+        const f1 = parseFloat(f1Input.value);
+        const f2 = parseFloat(f2Input.value);
+        
+        // Update Stats
+        document.getElementById('f1_val').innerText = f1;
+        document.getElementById('f2_val').innerText = f2;
+        document.getElementById('beat_val').innerText = Math.abs(f1 - f2);
+
+        // Update Oscillators
+        if (osc1) osc1.frequency.setTargetAtTime(f1, audioCtx.currentTime, 0.03);
+        if (osc2) osc2.frequency.setTargetAtTime(f2, audioCtx.currentTime, 0.03);
+
+        // Draw Waveform
+        ctx.fillStyle = 'black';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = '#00ff00';
+        ctx.beginPath();
+
+        for (let x = 0; x < canvas.width; x++) {
+            const t = x / canvas.width;
+            // Mathematical Superposition: y = sin(f1*t) + sin(f2*t)
+            const y = (Math.sin(2 * Math.PI * f1 * (t * 0.02)) + Math.sin(2 * Math.PI * f2 * (t * 0.02))) / 2;
+            const yPos = (y * 40) + canvas.height / 2;
+            if (x === 0) ctx.moveTo(x, yPos);
+            else ctx.lineTo(x, yPos);
+        }
+        ctx.stroke();
+
+        requestAnimationFrame(draw);
+    }
+
+    f1Input.addEventListener('input', draw);
+    f2Input.addEventListener('input', draw);
+    draw();
+</script>
+
+</body>
+</html>

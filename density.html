@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>The Density Game</title>
+    <style>
+        body { font-family: sans-serif; text-align: center; background: #f4f4f4; }
+        #game-container { position: relative; width: 400px; height: 500px; 
+                         background: #e0f7fa; margin: 20px auto; border: 5px solid #00acc1; overflow: hidden; }
+        #water { position: absolute; bottom: 0; width: 100%; height: 350px; background: rgba(3, 169, 244, 0.6); }
+        #object { position: absolute; left: 150px; width: 100px; height: 100px; 
+                  background: #ff9800; border: 2px solid #e65100; transition: bottom 1s ease-in-out; }
+        .controls { background: #fff; padding: 20px; display: inline-block; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        .stat { font-weight: bold; color: #d32f2f; }
+    </style>
+</head>
+<body>
+
+    <h1>The Density Challenge</h1>
+    <p>Adjust Mass and Volume. Can you make it float?</p>
+
+    <div id="game-container">
+        <div id="water"></div>
+        <div id="object"></div>
+    </div>
+
+    <div class="controls">
+        <div>
+            Mass: <input type="range" id="mass" min="10" max="200" value="100"> 
+            <span id="massVal">100</span> kg
+        </div>
+        <div>
+            Volume: <input type="range" id="volume" min="50" max="150" value="100"> 
+            <span id="volVal">100</span> L
+        </div>
+        <hr>
+        <div>Density: <span id="densityVal" class="stat">1.00</span> kg/L</div>
+        <div id="status">Status: Neutral Buoyancy</div>
+    </div>
+
+    <script>
+        const massInput = document.getElementById('mass');
+        const volInput = document.getElementById('volume');
+        const obj = document.getElementById('object');
+        const densityDisplay = document.getElementById('densityVal');
+        const statusDisplay = document.getElementById('status');
+
+        function updateGame() {
+            const mass = parseFloat(massInput.value);
+            const volume = parseFloat(volInput.value);
+            const density = mass / volume;
+
+            // Update Labels
+            document.getElementById('massVal').innerText = mass;
+            document.getElementById('volVal').innerText = volume;
+            densityDisplay.innerText = density.toFixed(2);
+
+            // Change object size based on volume
+            const size = Math.sqrt(volume) * 10;
+            obj.style.width = size + 'px';
+            obj.style.height = size + 'px';
+
+            // Water Density = 1.0
+            if (density > 1) {
+                obj.style.bottom = "0px";
+                statusDisplay.innerText = "Status: It Sinks!";
+                statusDisplay.style.color = "red";
+            } else if (density < 1) {
+                obj.style.bottom = "300px";
+                statusDisplay.innerText = "Status: It Floats!";
+                statusDisplay.style.color = "green";
+            } else {
+                obj.style.bottom = "150px";
+                statusDisplay.innerText = "Status: Neutral Buoyancy";
+                statusDisplay.style.color = "blue";
+            }
+        }
+
+        massInput.oninput = updateGame;
+        volInput.oninput = updateGame;
+        updateGame();
+    </script>
+</body>
+</html>

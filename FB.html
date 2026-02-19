@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>International Football League - Newton's Laws</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@400;700;900&display=swap');
+        body { margin: 0; overflow: hidden; font-family: 'Roboto', sans-serif; background-color: #000; user-select: none; }
+        
+        #ui-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 10; }
+        .interactive { pointer-events: auto; }
+        
+        .screen {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            display: flex; flex-direction: column; justify-content: center; align-items: center;
+            background: rgba(0,0,0,0.9); color: white; text-align: center;
+        }
+        .hidden { display: none !important; }
+
+        /* SCOREBOARD */
+        #hud { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: none; pointer-events: none; }
+        #score-board {
+            position: absolute; top: 20px; left: 50%; transform: translateX(-50%);
+            background: rgba(0,0,0,0.8); padding: 10px 40px; border-radius: 50px;
+            display: flex; gap: 30px; font-size: 2rem; font-weight: 900; border: 2px solid #00ff00;
+            pointer-events: auto; color: #fff;
+        }
+        .team-score { display: flex; flex-direction: column; align-items: center; min-width: 80px; }
+        .score-val { color: #00ff00; font-size: 2.5rem; }
+        .team-label { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 1px; }
+
+        #joystick-zone { position: absolute; bottom: 40px; left: 40px; width: 150px; height: 150px; pointer-events: auto; }
+        
+        #message-toast {
+            position: absolute; top: 35%; left: 50%; transform: translateX(-50%);
+            background: rgba(0,0,0,0.85); padding: 30px 60px; border-radius: 20px; border: 4px solid #00ff00;
+            color: #00ff00; font-size: 4rem; font-weight: 900; display: none; text-shadow: 0 0 15px #00ff00; z-index: 100;
+        }
+
+        /* POPUPS */
+        .popup-window {
+            background: #111; border: 3px solid #00ff00; padding: 30px; border-radius: 20px;
+            max-width: 650px; width: 90%; color: white; pointer-events: auto; box-shadow: 0 0 40px rgba(0,255,0,0.3);
+        }
+        .popup-title { color: #00ff00; border-bottom: 1px solid #333; padding-bottom: 10px; margin-bottom: 20px; }
+        .popup-content { text-align: left; line-height: 1.6; margin-bottom: 25px; font-size: 1.1rem; }
+        .popup-btns { display: flex; gap: 15px; justify-content: center; }
+        
+        .btn-ui { padding: 12px 25px; border: 1px solid #00ff00; background: #222; color: #00ff00; cursor: pointer; font-weight: bold; border-radius: 5px; }
+        .btn-ui:hover { background: #00ff00; color: #000; }
+        .btn-main { padding: 18px 45px; font-size: 1.5rem; background: #e91e63; color: white; border: none; border-radius: 50px; cursor: pointer; font-weight: 900; }
+
+        .grid-container { display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; margin-top: 20px; }
+        .selection-card { padding: 20px; background: #222; border: 2px solid #444; color: white; cursor: pointer; border-radius: 12px; transition: 0.3s; }
+        .selection-card:hover { border-color: #00ff00; background: #333; }
+    </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/nipplejs/0.9.0/nipplejs.min.js"></script>
+</head>
+<body>
+
+    <div id="canvas-container"></div>
+
+    <div id="ui-layer">
+        <div id="start-screen" class="screen interactive">
+            <h1 style="font-size: 3.5rem; margin-bottom: 30px;">INTERNATIONAL FOOTBALL LEAGUE</h1>
+            <button class="btn-main" onclick="Game.goToCountrySelect()">START GAME</button>
+        </div>
+
+        <div id="country-select" class="screen hidden interactive">
+            <h2>SELECT YOUR TEAM</h2>
+            <div class="grid-container" id="user-team-list"></div>
+        </div>
+        <div id="opponent-select" class="screen hidden interactive">
+            <h2>SELECT OPPONENT</h2>
+            <div class="grid-container" id="opp-team-list"></div>
+        </div>
+
+        <div id="hud">
+            <div id="score-board">
+                <div class="team-score">
+                    <span class="team-label" id="t1-name">USER</span>
+                    <span class="score-val" id="s1">0</span>
+                </div>
+                <div style="align-self: center; font-size: 2rem;">VS</div>
+                <div class="team-score">
+                    <span class="team-label" id="t2-name">OPP</span>
+                    <span class="score-val" id="s2">0</span>
+                </div>
+            </div>
+            <div id="joystick-zone"></div>
+        </div>
+
+        <div id="popup-overlay" class="screen hidden interactive">
+            <div id="popup-box" class="popup-window"></div>
+        </div>
+
+        <div id="message-toast"></div>
+    </div>
+
+<script>
+const CASE_1_DEF = "CASE 1 : If a body at rest tends to remain at rest unless an external force act on it.";
+const CASE_2_DEF = "CASE 2 : A body in motion tends to continue moving in a straight line at a constant speed unless acted upon by a net external force.";
+
+const TEAMS = [
+    { id: 'ind', name: 'INDIA', color: 0xFF9933, secondary: 0x128807 },
+    { id: 'bra', name: 'BRAZIL', color: 0xFFDF00, secondary: 0x009C3B },
+    { id: 'arg', name: 'ARGENTINA', color: 0x75AADB, secondary: 0xFFFFFF },
+    { id: 'ger', name: 'GERMANY', color: 0xFFFFFF, secondary: 0x000000 },
+    { id: 'fra', name: 'FRANCE', color: 0x002395, secondary: 0xFFFFFF },
+    { id: 'esp', name: 'SPAIN', color: 0xAA151B, secondary: 0xF1BF00 }
+];
+
+const Game = {
+    userTeam: null, oppTeam: null,
+    score1: 0, score2: 0,
+    players: [], ball: null,
+    joystick: { x: 0, y: 0 },
+    state: 'MENU', gameClock: 0,
+    radius: 60, 
+
+    goToCountrySelect: () => {
+        document.getElementById('start-screen').classList.add('hidden');
+        document.getElementById('country-select').classList.remove('hidden');
+        const list = document.getElementById('user-team-list');
+        TEAMS.forEach(t => list.innerHTML += `<div class="selection-card" onclick="Game.selectUser('${t.id}')">${t.name}</div>`);
+    },
+
+    selectUser: (id) => {
+        Game.userTeam = TEAMS.find(t => t.id === id);
+        document.getElementById('country-select').classList.add('hidden');
+        document.getElementById('opponent-select').classList.remove('hidden');
+        const list = document.getElementById('opp-team-list');
+        list.innerHTML = "";
+        TEAMS.filter(t => t.id !== id).forEach(t => list.innerHTML += `<div class="selection-card" onclick="Game.init3D('${t.id}')">${t.name}</div>`);
+    },
+
+    init3D: (oppId) => {
+        Game.oppTeam = TEAMS.find(t => t.id === oppId);
+        document.getElementById('opponent-select').classList.add('hidden');
+        document.getElementById('t1-name').innerText = Game.userTeam.name;
+        document.getElementById('t2-name').innerText = Game.oppTeam.name;
+        
+        // Scene Setup
+        Game.scene = new THREE.Scene();
+        Game.camera = new THREE.PerspectiveCamera(45, window.innerWidth/window.innerHeight, 0.1, 1000);
+        Game.camera.position.set(0, 50, 70);
+        Game.renderer = new THREE.WebGLRenderer({ antialias: true });
+        Game.renderer.setSize(window.innerWidth, window.innerHeight);
+        document.getElementById('canvas-container').appendChild(Game.renderer.domElement);
+
+        Game.scene.add(new THREE.AmbientLight(0xffffff, 0.8));
+        
+        // Circular Field
+        const field = new THREE.Mesh(new THREE.CircleGeometry(Game.radius, 64), new THREE.MeshStandardMaterial({ color: 0x1b5e20 }));
+        field.rotation.x = -Math.PI/2;
+        Game.scene.add(field);
+
+        // Circular Boundary Line
+        const line = new THREE.Mesh(new THREE.TorusGeometry(Game.radius, 0.3, 16, 100), new THREE.MeshBasicMaterial({ color: 0xffffff }));
+        line.rotation.x = Math.PI/2;
+        Game.scene.add(line);
+
+        // Goals (Transparent Zones)
+        Game.createGoal(Game.radius - 2, 0); // User attacks Right
+        Game.createGoal(-Game.radius + 2, Math.PI); // Opp attacks Left
+
+        // Ball
+        Game.ball = new THREE.Mesh(new THREE.SphereGeometry(1.2, 16, 16), new THREE.MeshStandardMaterial({color: 0xffffff}));
+        Game.ball.position.y = 1.2;
+        Game.ball.velocity = new THREE.Vector3();
+        Game.scene.add(Game.ball);
+
+        // Players
+        Game.spawnTeam(Game.userTeam, -1);
+        Game.spawnTeam(Game.oppTeam, 1);
+
+        // 360 Joystick
+        nipplejs.create({ zone: document.getElementById('joystick-zone'), mode: 'static', position: {left: '50%', top: '50%'}, color: '#00ff00' })
+            .on('move', (e, data) => { Game.joystick = { x: data.vector.x, y: -data.vector.y }; })
+            .on('end', () => { Game.joystick = { x: 0, y: 0 }; });
+
+        Game.startCountdown();
+    },
+
+    spawnTeam: (team, side) => {
+        for(let i=0; i<11; i++) {
+            const p = new THREE.Group();
+            const body = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 4, 12), new THREE.MeshStandardMaterial({color: team.color}));
+            body.position.y = 2;
+            const head = new THREE.Mesh(new THREE.SphereGeometry(0.8, 12, 12), new THREE.MeshStandardMaterial({color: 0xffdbac}));
+            head.position.y = 4.5;
+            p.add(body, head);
+            p.position.set(side * (15 + i*2), 0, (i-5)*7);
+            Game.players.push({ mesh: p, isUser: side === -1, origin: p.position.clone() });
+            Game.scene.add(p);
+        }
+    },
+
+    createGoal: (x, rot) => {
+        const g = new THREE.Group();
+        const mesh = new THREE.Mesh(new THREE.BoxGeometry(2, 10, 20), new THREE.MeshBasicMaterial({color:0xffffff, transparent:true, opacity:0.2}));
+        g.add(mesh); g.position.set(x, 5, 0); g.rotation.y = rot;
+        Game.scene.add(g);
+    },
+
+    startCountdown: () => {
+        const toast = document.getElementById('message-toast'); toast.style.display = 'block';
+        let count = 3;
+        const timer = setInterval(() => {
+            if(count >= 0) toast.innerText = count;
+            else if(count === -1) toast.innerText = "LET'S GO!";
+            else {
+                clearInterval(timer); toast.style.display = 'none';
+                document.getElementById('hud').style.display = 'block';
+                Game.state = 'PLAY'; Game.run();
+            }
+            count--;
+        }, 1000);
+    },
+
+    // NEWTON LOGIC POPUPS
+    showPopup: (title, text, options) => {
+        Game.state = 'PAUSE';
+        const overlay = document.getElementById('popup-overlay');
+        const box = document.getElementById('popup-box');
+        overlay.classList.remove('hidden');
+        let btnsHtml = options.map((opt, i) => `<button class="btn-ui" onclick="Game.handleChoice(${i})">${opt.label}</button>`).join('');
+        box.innerHTML = `<h2 class="popup-title">${title}</h2><div class="popup-content">${text}</div><div class="popup-btns">${btnsHtml}</div>`;
+        Game.currentOptions = options;
+    },
+
+    handleChoice: (idx) => {
+        Game.currentOptions[idx].action();
+    },
+
+    triggerDrinksBreak: () => {
+        Game.showPopup("Newton's First Law – Law of Inertia", 
+            `This law states that:<br><br><b>${CASE_1_DEF}</b><br><br><b>${CASE_2_DEF}</b><br><br><span style="color:#00ff00">Closing automatically in 40 seconds...</span>`, 
+            [{ label: "RESUME NOW", action: () => Game.endDrinksBreak() }]);
+        
+        Game.drinksTimer = setTimeout(() => Game.endDrinksBreak(), 40000);
+    },
+
+    endDrinksBreak: () => {
+        clearTimeout(Game.drinksTimer);
+        document.getElementById('popup-overlay').classList.add('hidden');
+        Game.ball.position.set(0, 1.2, 0);
+        Game.ball.velocity.set(0,0,0);
+        setTimeout(() => Game.askRestart(), 500);
+    },
+
+    askRestart: () => {
+        Game.showPopup("Game Restart", "Which case of Newton’s First Law will you use to restart the game?", [
+            { label: "Case 1", action: () => { Game.state='PLAY'; Game.ball.velocity.x = 2; document.getElementById('popup-overlay').classList.add('hidden'); Game.restartFlag=true; Game.localTimer=0; } },
+            { label: "Case 2", action: () => Game.confirmChoice(2, "restart") }
+        ]);
+    },
+
+    confirmChoice: (chosenCase, phase) => {
+        const wrongCase = chosenCase === 2 ? "Case 2" : "Case 1";
+        Game.showPopup("Confirmation", `Are you sure you want to choose ${wrongCase}?<br><br><small>${CASE_1_DEF}<br>${CASE_2_DEF}</small>`, [
+            { label: "YES", action: () => Game.warningPopup(chosenCase, phase) },
+            { label: "NO", action: () => { if(phase==="restart") Game.askRestart(); else if(phase==="pass") Game.askPass(); else if(phase==="goal") Game.askGoalPrep(); else Game.askFinalKick(); } }
+        ]);
+    },
+
+    warningPopup: (chosenCase, phase) => {
+        let msg = chosenCase === 2 ? `CASE 2 cannot be applied as ball is in REST POSITION.<br><br>${CASE_2_DEF}` : `CASE 1 cannot be applied as ball is already in Motion.<br><br>${CASE_1_DEF}`;
+        Game.showPopup("Warning", `<span style="color:#ff5252">${msg}</span>`, [
+            { label: "TRY AGAIN", action: () => { if(phase==="restart") Game.askRestart(); else if(phase==="pass") Game.askPass(); else if(phase==="goal") Game.askGoalPrep(); else Game.askFinalKick(); } }
+        ]);
+    },
+
+    askPass: () => {
+        Game.showPopup("Tactical Decision", "Ball is moving towards teammate. Which case should he use to STOP the ball and give a proper pass?", [
+            { label: "Case 1", action: () => Game.confirmChoice(1, "pass") },
+            { label: "Case 2", action: () => { 
+                document.getElementById('popup-overlay').classList.add('hidden');
+                Game.ball.velocity.set(0,0,0);
+                setTimeout(() => { Game.ball.velocity.z = -3; Game.state='PLAY'; Game.passFlag=true; Game.localTimer=0; }, 2000);
+            }}
+        ]);
+    },
+
+    askGoalPrep: () => {
+        Game.showPopup("Goal Opportunity", "Which case of Newton’s First Law you will choose to stop the ball and adjust perfectly to kick the Goal?", [
+            { label: "Case 1", action: () => Game.confirmChoice(1, "goal") },
+            { label: "Case 2", action: () => { 
+                document.getElementById('popup-overlay').classList.add('hidden');
+                Game.ball.velocity.set(0,0,0);
+                toast("Adjusting for 5s...");
+                setTimeout(() => Game.askFinalKick(), 5000);
+            }}
+        ]);
+    },
+
+    askFinalKick: () => {
+        Game.showPopup("Final Kick", "Which case of Newton’s First Law will you use to kick the Goal?", [
+            { label: "Case 1", action: () => { 
+                document.getElementById('popup-overlay').classList.add('hidden');
+                Game.ball.velocity.set(10, 0, 0); Game.state='PLAY';
+            }},
+            { label: "Case 2", action: () => Game.confirmChoice(2, "final") }
+        ]);
+    },
+
+    // GAME LOOP
+    run: () => {
+        if(Game.state !== 'PLAY') { requestAnimationFrame(Game.run); return; }
+        const dt = 0.016;
+        Game.gameClock += dt;
+        if(Game.gameClock > 60 && !Game.breakTriggered) { Game.breakTriggered=true; Game.triggerDrinksBreak(); }
+        
+        if(Game.restartFlag) { Game.localTimer += dt; if(Game.localTimer > 10) { Game.restartFlag=false; Game.askPass(); } }
+        if(Game.passFlag) { Game.localTimer += dt; if(Game.localTimer > 10) { Game.passFlag=false; Game.askGoalPrep(); } }
+
+        // Find nearest user player
+        let nearestUser = null, minDist = Infinity;
+        Game.players.forEach(p => {
+            const d = p.mesh.position.distanceTo(Game.ball.position);
+            if(p.isUser) { if(d < minDist) { minDist = d; nearestUser = p; } }
+            else { // AI
+                if(d < 25) {
+                    const dir = new THREE.Vector3().subVectors(Game.ball.position, p.mesh.position).normalize();
+                    p.mesh.position.addScaledVector(dir, 0.1);
+                    if(d < 2) Game.ball.velocity.add(new THREE.Vector3(-0.5, 0, (Math.random()-0.5)).multiplyScalar(0.5));
+                } else {
+                    p.mesh.position.lerp(p.origin, 0.01);
+                }
+            }
+        });
+
+        // 360 Control
+        if(nearestUser && Game.joystick.x !== 0) {
+            nearestUser.mesh.position.x += Game.joystick.x * 0.4;
+            nearestUser.mesh.position.z += Game.joystick.y * 0.4;
+            if(minDist < 3) { Game.ball.velocity.x = Game.joystick.x * 1.5; Game.ball.velocity.z = Game.joystick.y * 1.5; }
+        }
+
+        // Physics & Circular Boundary
+        Game.ball.position.add(Game.ball.velocity);
+        Game.ball.velocity.multiplyScalar(0.97);
+        const dist = Math.sqrt(Game.ball.position.x**2 + Game.ball.position.z**2);
+        if(dist > Game.radius) {
+            const normal = new THREE.Vector3(-Game.ball.position.x, 0, -Game.ball.position.z).normalize();
+            Game.ball.velocity.reflect(normal);
+        }
+
+        // Scoring
+        if(Game.ball.position.x > Game.radius - 5 && Math.abs(Game.ball.position.z) < 10) { Game.score1++; resetBall(); }
+        if(Game.ball.position.x < -Game.radius + 5 && Math.abs(Game.ball.position.z) < 10) { Game.score2++; resetBall(); }
+
+        Game.camera.position.x += (Game.ball.position.x - Game.camera.position.x) * 0.05;
+        Game.camera.lookAt(Game.ball.position);
+        Game.renderer.render(Game.scene, Game.camera);
+        requestAnimationFrame(Game.run);
+    }
+};
+
+function resetBall() {
+    Game.ball.position.set(0, 1.2, 0); Game.ball.velocity.set(0,0,0);
+    document.getElementById('s1').innerText = Game.score1;
+    document.getElementById('s2').innerText = Game.score2;
+}
+
+function toast(m) {
+    const t = document.getElementById('message-toast'); t.innerText = m; t.style.display='block';
+    setTimeout(()=>t.style.display='none', 2000);
+}
+</script>
+</body>
+</html>s
